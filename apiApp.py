@@ -1,8 +1,8 @@
 #coding:utf-8
 
-from flask import Flask,redirect,url_for,render_template
+from flask import Flask,redirect,url_for,render_template,jsonify
 from flask.ext.restful import reqparse, abort, Api, Resource
-
+from flask.ext.restful.representations.json import output_json
 from flask.ext import admin
 from flask.ext.mongoengine import MongoEngine
 from flask.ext.admin.form import rules
@@ -17,7 +17,7 @@ import json
 
 app = Flask(__name__)
 app.config['SECRET_KEY']='FWAPIAPP#$'
-app.config['MONGODB_SETTINGS']={'DB':'testDB','HOST':'192.168.100.142','PORT':27017}
+app.config['MONGODB_SETTINGS']={'DB':'testDB','HOST':'192.168.100.115','PORT':27017}
 
 api = Api(app)
 
@@ -39,6 +39,7 @@ class CaptchaAdmin(db.Document):
 	phoneMessNum=db.StringField(max_length=4)
 	#create_time=db.DateTimeField()
 	create_time=db.IntField()
+	status=db.IntField(default=1)
 
 	def __unicode__(self):
 		return self.phone
@@ -64,42 +65,66 @@ def datetime2stamp(utcnow):
 
 
 def stamp2datetime(stamp):
-	parse_args
+	pass
 
 def checkRandomText():
 	pass
 
+def checkPhoneNum():
+	pass
 
 class Captcha(Resource):
 
-	def get(self):
-		self.post('get')
+	# def get(self):
+	# 	self.post('get')
 
 	def post(self,optName):
 		print "optName===",optName
 		if optName=='get':
 			import datetime
 			paramDict=parser.parse_args()
+
 			#save db
 			now=datetime.datetime.utcnow()
-			ca=CaptchaAdmin()
-			ca.phone=paramDict['phoneNum']
-			ca.phoneMessNum=getRandomText()
-			ca.create_time=datetime2stamp(now)
-			ca.save()
+			try:
+				cap=CaptchaAdmin.objects.filter(phone=paramDict['phoneNum'])
+				if cap.count()>0:
+					ca=cap[0]
+					now_stamp=datetime2stamp(now)
+					num=now_stamp-ca.create_time
+					if num<60:
+						return output_json({'code':-2,'msg':'wait for 60s'},409)
+				else:
+					ca=CaptchaAdmin()
+				ca.phone=paramDict['phoneNum']
+				ca.phoneMessNum=getRandomText()
+				ca.create_time=datetime2stamp(now)
+				ca.save()
+				#send message to phone
+				
+				return output_json({'code':1,'stamp':ca.create_time},200)
+			except Exception, e:
+				#import traceback;traceback.print_exc()
+				return output_json({'code':-1,'msg':'error'},410)
 
-			#send message to phone
-			return {'code':'1','stamp':ca.create_time}
 
 		elif optName=='check':
 			#check stamp and phoneNum
 			paramDict=parser.parse_args()
-			if paramDict['phoneNum'] and paramDict['stamp']:
-				print dir(Captcha)
-				#print Captcha.object.get({'phone':paramDict['phoneNum'],'create_time':paramDict['stamp']})
-			return {'e':'e'}
+			if paramDict['phoneNum'] and paramDict['stamp'] and paramDict['phone']:
+				#print dir(CaptchaAdmin.objects)
+				try:
+					ca=CaptchaAdmin.objects.get(phoneMessNum=paramDict['phoneNum'],phone=paramDict['phone'],create_time=paramDict['stamp'],status=1)
+					print ca ,dir(ca)
+					ca.status=0
+					ca.save()
+					return output_json({'code':1,'msg':'ok'},201)
+				except:
+					return output_json({'code':-1,'msg':u'please request again!'},411)
+
+			return output_json({'code':-1,'msg':u'please request again!'},303)
 		else:
-			return {'code':-1,'msg':u'error message'}
+			return output_json({'code':-1,'msg':u'error message'},500)
 
 
 api.add_resource(Captcha, '/<string:optName>')
@@ -109,11 +134,7 @@ api.add_resource(Captcha, '/<string:optName>')
 ###########################admin############
 
 class APIAdminView(auth.AuthModelView):
-	form_widget_args={
-		'app_url':{'style':'width:500px;'},
-		'app_description':{'rows':4,'style':'width:500px;'}
-	}
-
+	pass
 
 
 @app.route('/')
